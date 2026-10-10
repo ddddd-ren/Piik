@@ -260,6 +260,49 @@ Piik 通过 WebRTC 传输画面和声音。禁用 WebRTC 或禁止未经代理�
 参考 [Chrome 策略说明](https://developer.chrome.com/docs/extensions/reference/api/privacy#property-network)
 和 [Vivaldi 隐私设置](https://help.vivaldi.com/desktop/privacy/privacy-settings/)（英文）。
 
+### 网页与 App 之间的 mDNS 候选排查
+
+`app/browser-media/connection` 表示网页与 App 的媒体连接失败，不能单凭这个错误
+确定原因。Chromium 浏览器可能将 host 候选的本机 IP 换成 `<uuid>.local`；这种
+mDNS 隐藏本身是正常行为。只有同一次尝试的诊断或前后对照才能判断它是否与失败有关。
+
+可以在源码工作区使用候选探测工具，不需要开始屏幕分享：
+
+```powershell
+$env:CHROME_PATH = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+npm exec -- tsx scripts/browser-mdns-probe.ts https://piik.example.com
+```
+
+将示例来源换成实际站点的协议、主机和端口，不带路径、凭据、查询或片段。
+先按[源码运行说明](../README.md#run-from-source)安装仓库已有依赖。
+工具使用临时浏览器配置，不修改日常配置；报告只输出候选数量，不输出 IP 或完整候选。
+它先测空白页，再测指定站点。导航失败、来源被重定向、收集超时和没有 host 候选时会报错，
+不能把没有地址当作豁免成功。`mdns > 0` 表示存在 `.local` 地址，`realIp > 0`
+表示存在 IPv4 或 IPv6 地址；探测成功只说明完成采样，不代表媒体连接成功。
+
+如果已确认问题涉及 mDNS 地址解析，可由 Windows 管理员对受信任的 Piik 来源做对照：
+
+| 浏览器 | 机器级注册表键 |
+| --- | --- |
+| Chrome | `HKLM\SOFTWARE\Policies\Google\Chrome\WebRtcLocalIpsAllowedUrls` |
+| Edge | `HKLM\SOFTWARE\Policies\Microsoft\Edge\WebRtcLocalIpsAllowedUrls` |
+
+修改前导出对应浏览器策略键，并记录目标键是否原本存在；新增键和值需要单独撤销，
+仅导入旧备份不会删除新增项。在目标键下用未占用的 `1`、`2` 等名称添加 `REG_SZ` 值，
+内容是实际 Piik 来源；保留已有值。只有确实使用时才额外加入 `http://localhost:8787`。
+保留 `LocalNetworkAccessAllowedForUrls` 和 `LoopbackNetworkAllowedForUrls`，
+它们管理本地网络访问，与 mDNS 豁免不同。
+
+完全退出并重启对应浏览器，在 `chrome://policy` 或 `edge://policy` 确认该策略及来源
+显示正常，再对照候选数量。指定站点的 `mdns = 0`、`realIp > 0` 表明候选豁免生效；
+随后仍需在实际使用的浏览器配置中重试 App 分享并收集同一次尝试的报告。
+其他 Chromium 浏览器不会必然读取 Chrome/Edge 策略；用 `CHROME_PATH` 指向它们的
+可执行文件做独立验证，不能仅凭内核相同认定兼容。
+
+此策略让白名单来源获得本机真实 IP，只添加受信任来源，不使用全局通配符。
+参见 [Chromium 策略定义](https://github.com/chromium/chromium/blob/main/components/policy/resources/templates/policy_definitions/Miscellaneous/WebRtcLocalIpsAllowedUrls.yaml)
+和 [Edge 官方说明](https://learn.microsoft.com/zh-cn/deployedge/microsoft-edge-browser-policies/webrtclocalipsallowedurls)。
+
 ### 校园网或严格 NAT
 
 校园网并不一定无法使用 Piik，但多人共用出口、严格的防火墙策略可能让直连更困难。
